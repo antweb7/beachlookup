@@ -1,13 +1,20 @@
 ---
-const { lat, lng, label } = Astro.props as { lat:number; lng:number; label?:string };
-const key = import.meta.env.PUBLIC_MAPTILER_KEY;
-const url = `https://api.maptiler.com/maps/streets/static/${lng},${lat},14/600x400.png?key=${key}&markers=${lat},${lng}`;
+const { lat, lng, label = '', zoom = 15 } = Astro.props;
+const key = import.meta.env.PUBLIC_GOOGLE_MAPS_KEY;
+
+// Static image (no JS). Note Google expects lat,lng order.
+const width = 800, height = 450, scale = 2;
+const src = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${zoom}&size=${width}x${height}&scale=${scale}&maptype=roadmap&markers=color:red|${lat},${lng}&key=${key}`;
 ---
-<figure style="position:relative;display:inline-block">
-  <img src={url} width="600" height="400" alt={`Map of ${label ?? 'beach'}`} loading="lazy" />
-  {label && (
-    <figcaption style="position:absolute;left:.6rem;bottom:.6rem;padding:.2rem .5rem;background:rgba(0,0,0,.55);color:#fff;border-radius:.35rem;font:600 .9rem/1 system-ui">
-      {label}
-    </figcaption>
-  )}
+<figure style="margin:0">
+  <img
+    src={src}
+    width={width}
+    height={height}
+    alt={label}
+    style="width:100%;height:auto;border-radius:12px;border:1px solid #1f2937;background:#0f1420"
+    loading="lazy"
+    decoding="async"
+  />
+  {label && <figcaption style="font-size:.8rem;opacity:.8;margin-top:.25rem">{label}</figcaption>}
 </figure>

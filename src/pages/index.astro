@@ -1,16 +1,48 @@
 ---
-
+import { getCollection } from 'astro:content';
+import { slugify } from '../lib/slug';
+const beaches = await getCollection('beaches');
+const siteTitle = 'BeachLookup';
 ---
-
+<!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
+  <head>
+    <meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{siteTitle}</title>
+    <meta name="description" content="Look up beaches by location and amenities." />
+    <style>
+      :root{color-scheme:dark}
+      body{font-family:system-ui;margin:0;background:#0b0e13;color:#e5e7eb}
+      .wrap{max-width:960px;margin:2rem auto;padding:0 1rem}
+      .grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+      .card{background:#0f1420;border:1px solid #1f2937;border-radius:12px;padding:1rem}
+      .title{font-weight:700;margin:0 0 .25rem}
+      .chip{display:inline-block;background:#1f2937;border:1px solid #374151;border-radius:9999px;padding:.15rem .6rem;font-size:.8rem;margin:.25rem .25rem 0 0}
+      a{text-decoration:none;color:inherit}
+      .small{opacity:.7;font-size:.9rem}
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>{siteTitle}</h1>
+      <p class="small">Find the right beach, fast.</p>
+      <section class="grid">
+        {beaches.map((entry) => {
+          const d = entry.data as any;
+          const province = slugify(d.province ?? d.region);
+          const locality = slugify(d.locality);
+          const href = `/en/${province}/${locality}/beaches/${entry.slug}/`;
+          return (
+            <a class="card" href={href}>
+              <div class="title">{d.title}</div>
+              <div class="small">{d.locality}, {d.province ?? d.region}</div>
+              <div style="margin-top:.5rem">
+                {Array.isArray(d.amenities) ? d.amenities.slice(0,3).map((a: string) => <span class="chip">{a}</span>) : null}
+              </div>
+            </a>
+          );
+        })}
+      </section>
+    </main>
+  </body>
 </html>

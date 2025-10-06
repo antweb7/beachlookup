@@ -2,6 +2,7 @@
 title: "Playa de las Higuericas"
 country: "ES"
 region: "Comunidad Valenciana"
+province: "Alicante"
 locality: "Pilar de la Horadada"
 address: "03190 Pilar de la Horadada, Alicante"
 coords: { lat: 37.85328721893746, lng: -0.7624667333134837 }

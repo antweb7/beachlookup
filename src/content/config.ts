@@ -7,6 +7,7 @@ const beaches = defineCollection({
     title: z.string(),
     country: z.string().default('ES'),
     region: z.string(),                 // e.g. Comunidad Valenciana
+    province: z.string().optional(),    // e.g. Alicante
     locality: z.string(),               // e.g. Pilar de la Horadada
     address: z.string().optional(),     // human-readable address
     coords: z.object({ lat: z.number(), lng: z.number() }),
