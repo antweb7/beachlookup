@@ -1,203 +1,141 @@
 ---
 import { getCollection, getEntry } from 'astro:content';
 import StaticMap from '../../../../../components/StaticMap.astro';
+import Base from '../../../../../layouts/Base.astro';
 import { slugify } from '../../../../../lib/slug';
 
-// Generate all static paths (en + es for every beach)
+// Build all paths (en + es)
 export async function getStaticPaths() {
   const beaches = await getCollection('beaches');
-
   return beaches.flatMap((e) => {
-    const d = e.data;
+    const d = e.data as any;
     const province = slugify(d.province ?? d.region);
     const locality = slugify(d.locality);
     const slug = e.slug;
-
     return ['en','es'].map((lang) => ({
-      params: {
-        lang,
-        province,
-        locality,
-        // Inline ternary avoids any scope surprises
-        category: lang === 'es' ? 'playas' : 'beaches',
-        slug,
-      },
+      params: { lang, province, locality, category: lang === 'es' ? 'playas' : 'beaches', slug }
     }));
   });
 }
 
-// Pull the content entry using the filename slug
 const { slug, lang } = Astro.params;
 const entry = await getEntry('beaches', slug);
 if (!entry) throw new Error('Beach not found');
-const d = entry.data;
+const d = entry.data as any;
 
-// Build alternates for <link rel="alternate" hreflang="...">
 const province = slugify(d.province ?? d.region);
 const locality = slugify(d.locality);
-const urlFor = (lng) =>
-  `/${lng}/${province}/${locality}/${(lng === 'es' ? 'playas' : 'beaches')}/${entry.slug}/`;
+const urlFor = (lng: 'en'|'es') => `/${lng}/${province}/${locality}/${(lng==='es'?'playas':'beaches')}/${entry.slug}/`;
 
-// JSON-LD: Beach + TouristAttraction + Place
-const contains = [];
-if (Array.isArray(d.parking) && d.parking.length) {
-  for (const p of d.parking) {
-    contains.push({
-      "@type": "ParkingFacility",
-      "name": p.name,
-      "geo": { "@type":"GeoCoordinates", "latitude": p.lat, "longitude": p.lng },
-      "additionalProperty": [
-        p.free !== undefined ? { "@type":"PropertyValue", "name":"Free", "value": p.free } : null,
-        p.price_note ? { "@type":"PropertyValue", "name":"Price note", "value": p.price_note } : null,
-        p.seasonal_note ? { "@type":"PropertyValue", "name":"Seasonal", "value": p.seasonal_note } : null
-      ].filter(Boolean)
-    });
-  }
-}
-if (Array.isArray(d.playAreas) && d.playAreas.length) {
-  for (const pl of d.playAreas) {
-    contains.push({
-      "@type": "Playground",
-      "name": pl.name,
-      "geo": { "@type":"GeoCoordinates", "latitude": pl.lat, "longitude": pl.lng },
-      ...(pl.notes ? { "description": pl.notes } : {})
-    });
-  }
-}
-if (Array.isArray(d.eateries) && d.eateries.length) {
-  for (const e of d.eateries) {
-    contains.push({
-      "@type": "FoodEstablishment",
-      "name": e.name,
-      "geo": { "@type":"GeoCoordinates", "latitude": e.lat, "longitude": e.lng },
-      ...(e.url ? { "url": e.url } : {}),
-      ...(e.phone ? { "telephone": e.phone } : {}),
-      ...(e.season_note ? { "@type":"OpeningHoursSpecification", "description": e.season_note } : {})
-    });
-  }
-}
-
+// JSON-LD
+const contains: any[] = [];
+if (Array.isArray(d.parking)) for (const p of d.parking) contains.push({
+  "@type":"ParkingFacility","name":p.name,
+  "geo":{"@type":"GeoCoordinates","latitude":p.lat,"longitude":p.lng},
+  "additionalProperty":[
+    p.free!==undefined?{"@type":"PropertyValue","name":"Free","value":p.free}:null,
+    p.price_note?{"@type":"PropertyValue","name":"Price note","value":p.price_note}:null,
+    p.seasonal_note?{"@type":"PropertyValue","name":"Seasonal","value":p.seasonal_note}:null
+  ].filter(Boolean)
+});
+if (Array.isArray(d.playAreas)) for (const pl of d.playAreas) contains.push({
+  "@type":"Playground","name":pl.name,
+  "geo":{"@type":"GeoCoordinates","latitude":pl.lat,"longitude":pl.lng},
+  ...(pl.notes?{"description":pl.notes}:{})
+});
+if (Array.isArray(d.eateries)) for (const e of d.eateries) contains.push({
+  "@type":"FoodEstablishment","name":e.name,
+  "geo":{"@type":"GeoCoordinates","latitude":e.lat,"longitude":e.lng},
+  ...(e.url?{"url":e.url}:{}),...(e.phone?{"telephone":e.phone}:{}),
+  ...(e.season_note?{"@type":"OpeningHoursSpecification","description":e.season_note}:{})
+});
 const jsonld = {
-  "@context": "https://schema.org",
-  "@type": ["Beach","TouristAttraction","Place"],
-  "name": d.title,
-  "url": Astro.url.href,
-  "description": d.description,
-  "address": {
-    "@type": "PostalAddress",
-    "streetAddress": d.address,
-    "addressLocality": d.locality,
-    "addressRegion": d.region,
-    "addressCountry": d.country
-  },
-  "geo": { "@type": "GeoCoordinates", "latitude": d.coords.lat, "longitude": d.coords.lng },
-  ...(d.isWheelchairAccessible !== undefined ? { "isWheelchairAccessible": d.isWheelchairAccessible } : {}),
-  "isAccessibleForFree": d.isFree,
-  "amenityFeature": [
-    ...(Array.isArray(d.amenities) ? d.amenities : []).map((name) => ({
-      "@type":"LocationFeatureSpecification", name, value: true
-    })),
-    ...(d.blueFlagYear ? [{
-      "@type":"LocationFeatureSpecification", "name":"Blue Flag", "value": d.blueFlagYear
-    }] : [])
-  ],
-  ...(d.extent ? {
-    "geoContains": {
-      "@type":"GeoShape",
-      [d.extent.type === 'line' ? 'line' : 'polygon']:
-        d.extent.coords.map(([lat,lng]) => `${lat} ${lng}`).join(' ')
-    }
-  } : {}),
-  ...(contains.length ? { "containsPlace": contains } : {})
+  "@context":"https://schema.org","@type":["Beach","TouristAttraction","Place"],
+  "name":d.title,"url":Astro.url.href,"description":d.description,
+  "address":{"@type":"PostalAddress","streetAddress":d.address,"addressLocality":d.locality,"addressRegion":d.region,"addressCountry":d.country},
+  "geo":{"@type":"GeoCoordinates","latitude":d.coords.lat,"longitude":d.coords.lng},
+  ...(d.isWheelchairAccessible!==undefined?{"isWheelchairAccessible":d.isWheelchairAccessible}:{ }),
+  "isAccessibleForFree":d.isFree,
+  "amenityFeature":[...(Array.isArray(d.amenities)?d.amenities:[]).map((name:string)=>({"@type":"LocationFeatureSpecification",name,value:true})),
+    ...(d.blueFlagYear?[{"@type":"LocationFeatureSpecification","name":"Blue Flag","value":d.blueFlagYear}]:[])],
+  ...(d.extent?{"geoContains":{"@type":"GeoShape",[d.extent.type==='line'?'line':'polygon']:d.extent.coords.map(([lat,lng]:[number,number])=>`${lat} ${lng}`).join(' ')}}:{ }),
+  ...(contains.length?{"containsPlace":contains}:{})
 };
 ---
-<!doctype html>
-<html lang={lang}>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>{d.title} – BeachLookup</title>
-    <meta name="description" content={d.description ?? `Info for ${d.title}`} />
+<Base title={`${d.title} – BeachLookup`} description={d.description ?? `Info for ${d.title}`}>
+  <fragment slot="head">
     <link rel="alternate" href={urlFor('en')} hreflang="en" />
     <link rel="alternate" href={urlFor('es')} hreflang="es" />
     <script type="application/ld+json">{JSON.stringify(jsonld)}</script>
-    <style>
-      :root{color-scheme:dark}
-      body{font-family:system-ui;margin:0;background:#0b0e13;color:#e5e7eb}
-      .wrap{max-width:920px;margin:2rem auto;padding:0 1rem}
-      .chips{margin-top:.5rem}
-      .chip{display:inline-block;background:#1f2937;border:1px solid #374151;
-            border-radius:9999px;padding:.15rem .6rem;font-size:.8rem;margin:.25rem .25rem 0 0}
-      .meta{opacity:.8}
-      .section{margin-top:1.25rem}
-      a{color:#93c5fd;text-decoration:none}
-      a:hover{text-decoration:underline}
-      .card{background:#0f1420;border:1px solid #1f2937;border-radius:12px;padding:1rem}
-    </style>
-  </head>
-  <body>
-    <main class="wrap">
-      <h1 style="margin:.5rem 0">{d.title}</h1>
-      <div class="meta">{d.locality}, {d.province ?? d.region} · {d.country}</div>
+  </fragment>
 
-      <div class="section card">
-        <StaticMap lat={d.coords.lat} lng={d.coords.lng} label={d.title} />
+  <header class="mb-3">
+    <h1 class="text-3xl font-semibold tracking-tight">{d.title}</h1>
+    <div class="mt-1 text-sm text-slate-600">{d.locality}, {d.province ?? d.region} · {d.country}</div>
+  </header>
+
+  <div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <StaticMap lat={d.coords.lat} lng={d.coords.lng} label={d.title} />
+  </div>
+
+  {d.description && (
+    <p class="mt-5 text-[15px] leading-7 text-slate-800">{d.description}</p>
+  )}
+
+  {d.isWheelchairAccessible && (
+    <div class="mt-5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-900">
+      <strong class="font-semibold">Accessibility:</strong> Step-free access available
+    </div>
+  )}
+
+  {Array.isArray(d.amenities) && d.amenities.length ? (
+    <section class="mt-6">
+      <h2 class="text-base font-semibold text-slate-900">Amenities</h2>
+      <div class="mt-2 flex flex-wrap gap-2">
+        {d.amenities.map((a: string) => (
+          <span class="inline-block rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{a}</span>
+        ))}
       </div>
+    </section>
+  ) : null}
 
-      {d.description && <p class="section">{d.description}</p>}
+  {Array.isArray(d.parking) && d.parking.length ? (
+    <section class="mt-6">
+      <h2 class="text-base font-semibold text-slate-900">Parking</h2>
+      <ul class="mt-2 space-y-1.5 text-[15px] leading-7">
+        {d.parking.map((p: any) => (
+          <li>
+            <strong class="font-semibold">{p.name}</strong>
+            {p.free !== undefined ? (p.free ? " · Free" : " · Paid") : ""}
+            {p.walk_minutes ? ` · ${p.walk_minutes} min` : ""}
+            {p.price_note ? ` · ${p.price_note}` : ""}
+            {p.seasonal_note ? ` · ${p.seasonal_note}` : ""}
+          </li>
+        ))}
+      </ul>
+    </section>
+  ) : null}
 
-      {d.isWheelchairAccessible && (
-        <div class="section"><strong>Accessibility:</strong> Step-free access available</div>
-      )}
+  {Array.isArray(d.eateries) && d.eateries.length ? (
+    <section class="mt-6">
+      <h2 class="text-base font-semibold text-slate-900">Food &amp; Drink</h2>
+      <ul class="mt-2 space-y-1.5 text-[15px] leading-7">
+        {d.eateries.map((e: any) => (
+          <li>
+            <strong class="font-semibold">{e.name}</strong>
+            {e.seasonal ? " · Seasonal" : " · Year-round"}
+            {e.phone ? ` · ${e.phone}` : ""}
+            {e.url ? <> · <a class="text-blue-600 hover:underline" href={e.url} rel="noopener">Website</a></> : ""}
+          </li>
+        ))}
+      </ul>
+    </section>
+  ) : null}
 
-      {Array.isArray(d.amenities) && d.amenities.length ? (
-        <div class="section">
-          <strong>{lang === 'es' ? 'Servicios' : 'Amenities'}</strong>
-          <div class="chips">
-            {d.amenities.map((a) => <span class="chip">{a}</span>)}
-          </div>
-        </div>
-      ) : null}
-
-      {Array.isArray(d.parking) && d.parking.length ? (
-        <div class="section">
-          <strong>{lang === 'es' ? 'Aparcamiento' : 'Parking'}</strong>
-          <ul>
-            {d.parking.map((p) => (
-              <li>
-                <strong>{p.name}</strong>
-                {p.free !== undefined ? (p.free ? " · Free" : " · Paid") : ""}
-                {p.walk_minutes ? ` · ${p.walk_minutes} min walk` : ""}
-                {p.price_note ? ` · ${p.price_note}` : ""}
-                {p.seasonal_note ? ` · ${p.seasonal_note}` : ""}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {Array.isArray(d.eateries) && d.eateries.length ? (
-        <div class="section">
-          <strong>{lang === 'es' ? 'Bares y Restauración' : 'Food & Drink'}</strong>
-          <ul>
-            {d.eateries.map((e) => (
-              <li>
-                <strong>{e.name}</strong>
-                {e.seasonal ? " · Seasonal" : " · Year-round"}
-                {e.phone ? ` · ${e.phone}` : ""}
-                {e.url ? <> · <a href={e.url} rel="noopener">Website</a></> : ""}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {d.notes && (
-        <div class="section">
-          <strong>{lang === 'es' ? 'Notas' : 'Notes'}</strong>
-          <p>{d.notes}</p>
-        </div>
-      )}
-    </main>
-  </body>
-</html>
+  {d.notes && (
+    <section class="mt-6">
+      <h2 class="text-base font-semibold text-slate-900">Notes</h2>
+      <p class="mt-2 text-[15px] leading-7">{d.notes}</p>
+    </section>
+  )}
+</Base>
