@@ -1,56 +1,82 @@
 ---
 import { getCollection, getEntry } from 'astro:content';
-import StaticMap from '../../components/StaticMap.astro';
+import StaticMap from '../../../../../components/StaticMap.astro';
+import { slugify } from '../../../../../lib/slug';
 
-// 1) Tell Astro which slugs to prerender
+// Generate all static paths (en + es for every beach)
 export async function getStaticPaths() {
   const beaches = await getCollection('beaches');
-  return beaches.map((e) => ({ params: { slug: e.slug } }));
+
+  return beaches.flatMap((e) => {
+    const d = e.data;
+    const province = slugify(d.province ?? d.region);
+    const locality = slugify(d.locality);
+    const slug = e.slug;
+
+    return ['en','es'].map((lang) => ({
+      params: {
+        lang,
+        province,
+        locality,
+        // Inline ternary avoids any scope surprises
+        category: lang === 'es' ? 'playas' : 'beaches',
+        slug,
+      },
+    }));
+  });
 }
 
-// 2) Load the entry for the current slug
-const { slug } = Astro.params;
+// Pull the content entry using the filename slug
+const { slug, lang } = Astro.params;
 const entry = await getEntry('beaches', slug);
 if (!entry) throw new Error('Beach not found');
 const d = entry.data;
 
-// 3) Build JSON-LD sub-places
-const contains: any[] = [];
+// Build alternates for <link rel="alternate" hreflang="...">
+const province = slugify(d.province ?? d.region);
+const locality = slugify(d.locality);
+const urlFor = (lng) =>
+  `/${lng}/${province}/${locality}/${(lng === 'es' ? 'playas' : 'beaches')}/${entry.slug}/`;
 
-if (d.parking?.length) {
-  contains.push(...d.parking.map((p) => ({
-    "@type": "ParkingFacility",
-    "name": p.name,
-    "geo": { "@type":"GeoCoordinates", "latitude": p.lat, "longitude": p.lng },
-    "additionalProperty": [
-      p.free !== undefined ? { "@type":"PropertyValue", "name":"Free", "value": p.free } : null,
-      p.price_note ? { "@type":"PropertyValue", "name":"Price note", "value": p.price_note } : null,
-      p.seasonal_note ? { "@type":"PropertyValue", "name":"Seasonal", "value": p.seasonal_note } : null
-    ].filter(Boolean)
-  })));
+// JSON-LD: Beach + TouristAttraction + Place
+const contains = [];
+if (Array.isArray(d.parking) && d.parking.length) {
+  for (const p of d.parking) {
+    contains.push({
+      "@type": "ParkingFacility",
+      "name": p.name,
+      "geo": { "@type":"GeoCoordinates", "latitude": p.lat, "longitude": p.lng },
+      "additionalProperty": [
+        p.free !== undefined ? { "@type":"PropertyValue", "name":"Free", "value": p.free } : null,
+        p.price_note ? { "@type":"PropertyValue", "name":"Price note", "value": p.price_note } : null,
+        p.seasonal_note ? { "@type":"PropertyValue", "name":"Seasonal", "value": p.seasonal_note } : null
+      ].filter(Boolean)
+    });
+  }
+}
+if (Array.isArray(d.playAreas) && d.playAreas.length) {
+  for (const pl of d.playAreas) {
+    contains.push({
+      "@type": "Playground",
+      "name": pl.name,
+      "geo": { "@type":"GeoCoordinates", "latitude": pl.lat, "longitude": pl.lng },
+      ...(pl.notes ? { "description": pl.notes } : {})
+    });
+  }
+}
+if (Array.isArray(d.eateries) && d.eateries.length) {
+  for (const e of d.eateries) {
+    contains.push({
+      "@type": "FoodEstablishment",
+      "name": e.name,
+      "geo": { "@type":"GeoCoordinates", "latitude": e.lat, "longitude": e.lng },
+      ...(e.url ? { "url": e.url } : {}),
+      ...(e.phone ? { "telephone": e.phone } : {}),
+      ...(e.season_note ? { "@type":"OpeningHoursSpecification", "description": e.season_note } : {})
+    });
+  }
 }
 
-if (d.playAreas?.length) {
-  contains.push(...d.playAreas.map((pl) => ({
-    "@type": "Playground",
-    "name": pl.name,
-    "geo": { "@type":"GeoCoordinates", "latitude": pl.lat, "longitude": pl.lng },
-    ...(pl.notes ? { "description": pl.notes } : {})
-  })));
-}
-
-if (d.eateries?.length) {
-  contains.push(...d.eateries.map((e) => ({
-    "@type": "FoodEstablishment",
-    "name": e.name,
-    "geo": { "@type":"GeoCoordinates", "latitude": e.lat, "longitude": e.lng },
-    ...(e.url ? { "url": e.url } : {}),
-    ...(e.phone ? { "telephone": e.phone } : {}),
-    ...(e.season_note ? { "openingHoursSpecification": [{ "@type":"OpeningHoursSpecification", "description": e.season_note }] } : {})
-  })));
-}
-
-// 4) JSON-LD for Beach + TouristAttraction + Place
 const jsonld = {
   "@context": "https://schema.org",
   "@type": ["Beach","TouristAttraction","Place"],
@@ -68,8 +94,12 @@ const jsonld = {
   ...(d.isWheelchairAccessible !== undefined ? { "isWheelchairAccessible": d.isWheelchairAccessible } : {}),
   "isAccessibleForFree": d.isFree,
   "amenityFeature": [
-    ...d.amenities.map((name) => ({ "@type":"LocationFeatureSpecification", name, value: true })),
-    ...(d.blueFlagYear ? [{ "@type":"LocationFeatureSpecification", "name":"Blue Flag", "value": d.blueFlagYear }] : [])
+    ...(Array.isArray(d.amenities) ? d.amenities : []).map((name) => ({
+      "@type":"LocationFeatureSpecification", name, value: true
+    })),
+    ...(d.blueFlagYear ? [{
+      "@type":"LocationFeatureSpecification", "name":"Blue Flag", "value": d.blueFlagYear
+    }] : [])
   ],
   ...(d.extent ? {
     "geoContains": {
@@ -82,12 +112,14 @@ const jsonld = {
 };
 ---
 <!doctype html>
-<html lang="en">
+<html lang={lang}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>{d.title} – BeachLookup</title>
     <meta name="description" content={d.description ?? `Info for ${d.title}`} />
+    <link rel="alternate" href={urlFor('en')} hreflang="en" />
+    <link rel="alternate" href={urlFor('es')} hreflang="es" />
     <script type="application/ld+json">{JSON.stringify(jsonld)}</script>
     <style>
       :root{color-scheme:dark}
@@ -106,7 +138,7 @@ const jsonld = {
   <body>
     <main class="wrap">
       <h1 style="margin:.5rem 0">{d.title}</h1>
-      <div class="meta">{d.locality}, {d.region} · {d.country}</div>
+      <div class="meta">{d.locality}, {d.province ?? d.region} · {d.country}</div>
 
       <div class="section card">
         <StaticMap lat={d.coords.lat} lng={d.coords.lng} label={d.title} />
@@ -118,18 +150,18 @@ const jsonld = {
         <div class="section"><strong>Accessibility:</strong> Step-free access available</div>
       )}
 
-      {d.amenities.length ? (
+      {Array.isArray(d.amenities) && d.amenities.length ? (
         <div class="section">
-          <strong>Amenities</strong>
+          <strong>{lang === 'es' ? 'Servicios' : 'Amenities'}</strong>
           <div class="chips">
             {d.amenities.map((a) => <span class="chip">{a}</span>)}
           </div>
         </div>
       ) : null}
 
-      {d.parking.length ? (
+      {Array.isArray(d.parking) && d.parking.length ? (
         <div class="section">
-          <strong>Parking</strong>
+          <strong>{lang === 'es' ? 'Aparcamiento' : 'Parking'}</strong>
           <ul>
             {d.parking.map((p) => (
               <li>
@@ -144,9 +176,9 @@ const jsonld = {
         </div>
       ) : null}
 
-      {d.eateries.length ? (
+      {Array.isArray(d.eateries) && d.eateries.length ? (
         <div class="section">
-          <strong>Nearby Food & Drink</strong>
+          <strong>{lang === 'es' ? 'Bares y Restauración' : 'Food & Drink'}</strong>
           <ul>
             {d.eateries.map((e) => (
               <li>
@@ -162,7 +194,7 @@ const jsonld = {
 
       {d.notes && (
         <div class="section">
-          <strong>Notes</strong>
+          <strong>{lang === 'es' ? 'Notas' : 'Notes'}</strong>
           <p>{d.notes}</p>
         </div>
       )}
