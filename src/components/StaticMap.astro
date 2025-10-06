@@ -1,0 +1,13 @@
+---
+const { lat, lng, label } = Astro.props as { lat:number; lng:number; label?:string };
+const key = import.meta.env.PUBLIC_MAPTILER_KEY;
+const url = `https://api.maptiler.com/maps/streets/static/${lng},${lat},14/600x400.png?key=${key}&markers=${lat},${lng}`;
+---
+<figure style="position:relative;display:inline-block">
+  <img src={url} width="600" height="400" alt={`Map of ${label ?? 'beach'}`} loading="lazy" />
+  {label && (
+    <figcaption style="position:absolute;left:.6rem;bottom:.6rem;padding:.2rem .5rem;background:rgba(0,0,0,.55);color:#fff;border-radius:.35rem;font:600 .9rem/1 system-ui">
+      {label}
+    </figcaption>
+  )}
+</figure>

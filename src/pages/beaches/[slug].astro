@@ -1,0 +1,171 @@
+---
+import { getCollection, getEntry } from 'astro:content';
+import StaticMap from '../../components/StaticMap.astro';
+
+// 1) Tell Astro which slugs to prerender
+export async function getStaticPaths() {
+  const beaches = await getCollection('beaches');
+  return beaches.map((e) => ({ params: { slug: e.slug } }));
+}
+
+// 2) Load the entry for the current slug
+const { slug } = Astro.params;
+const entry = await getEntry('beaches', slug);
+if (!entry) throw new Error('Beach not found');
+const d = entry.data;
+
+// 3) Build JSON-LD sub-places
+const contains: any[] = [];
+
+if (d.parking?.length) {
+  contains.push(...d.parking.map((p) => ({
+    "@type": "ParkingFacility",
+    "name": p.name,
+    "geo": { "@type":"GeoCoordinates", "latitude": p.lat, "longitude": p.lng },
+    "additionalProperty": [
+      p.free !== undefined ? { "@type":"PropertyValue", "name":"Free", "value": p.free } : null,
+      p.price_note ? { "@type":"PropertyValue", "name":"Price note", "value": p.price_note } : null,
+      p.seasonal_note ? { "@type":"PropertyValue", "name":"Seasonal", "value": p.seasonal_note } : null
+    ].filter(Boolean)
+  })));
+}
+
+if (d.playAreas?.length) {
+  contains.push(...d.playAreas.map((pl) => ({
+    "@type": "Playground",
+    "name": pl.name,
+    "geo": { "@type":"GeoCoordinates", "latitude": pl.lat, "longitude": pl.lng },
+    ...(pl.notes ? { "description": pl.notes } : {})
+  })));
+}
+
+if (d.eateries?.length) {
+  contains.push(...d.eateries.map((e) => ({
+    "@type": "FoodEstablishment",
+    "name": e.name,
+    "geo": { "@type":"GeoCoordinates", "latitude": e.lat, "longitude": e.lng },
+    ...(e.url ? { "url": e.url } : {}),
+    ...(e.phone ? { "telephone": e.phone } : {}),
+    ...(e.season_note ? { "openingHoursSpecification": [{ "@type":"OpeningHoursSpecification", "description": e.season_note }] } : {})
+  })));
+}
+
+// 4) JSON-LD for Beach + TouristAttraction + Place
+const jsonld = {
+  "@context": "https://schema.org",
+  "@type": ["Beach","TouristAttraction","Place"],
+  "name": d.title,
+  "url": Astro.url.href,
+  "description": d.description,
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": d.address,
+    "addressLocality": d.locality,
+    "addressRegion": d.region,
+    "addressCountry": d.country
+  },
+  "geo": { "@type": "GeoCoordinates", "latitude": d.coords.lat, "longitude": d.coords.lng },
+  ...(d.isWheelchairAccessible !== undefined ? { "isWheelchairAccessible": d.isWheelchairAccessible } : {}),
+  "isAccessibleForFree": d.isFree,
+  "amenityFeature": [
+    ...d.amenities.map((name) => ({ "@type":"LocationFeatureSpecification", name, value: true })),
+    ...(d.blueFlagYear ? [{ "@type":"LocationFeatureSpecification", "name":"Blue Flag", "value": d.blueFlagYear }] : [])
+  ],
+  ...(d.extent ? {
+    "geoContains": {
+      "@type":"GeoShape",
+      [d.extent.type === 'line' ? 'line' : 'polygon']:
+        d.extent.coords.map(([lat,lng]) => `${lat} ${lng}`).join(' ')
+    }
+  } : {}),
+  ...(contains.length ? { "containsPlace": contains } : {})
+};
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{d.title} – BeachLookup</title>
+    <meta name="description" content={d.description ?? `Info for ${d.title}`} />
+    <script type="application/ld+json">{JSON.stringify(jsonld)}</script>
+    <style>
+      :root{color-scheme:dark}
+      body{font-family:system-ui;margin:0;background:#0b0e13;color:#e5e7eb}
+      .wrap{max-width:920px;margin:2rem auto;padding:0 1rem}
+      .chips{margin-top:.5rem}
+      .chip{display:inline-block;background:#1f2937;border:1px solid #374151;
+            border-radius:9999px;padding:.15rem .6rem;font-size:.8rem;margin:.25rem .25rem 0 0}
+      .meta{opacity:.8}
+      .section{margin-top:1.25rem}
+      a{color:#93c5fd;text-decoration:none}
+      a:hover{text-decoration:underline}
+      .card{background:#0f1420;border:1px solid #1f2937;border-radius:12px;padding:1rem}
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1 style="margin:.5rem 0">{d.title}</h1>
+      <div class="meta">{d.locality}, {d.region} · {d.country}</div>
+
+      <div class="section card">
+        <StaticMap lat={d.coords.lat} lng={d.coords.lng} label={d.title} />
+      </div>
+
+      {d.description && <p class="section">{d.description}</p>}
+
+      {d.isWheelchairAccessible && (
+        <div class="section"><strong>Accessibility:</strong> Step-free access available</div>
+      )}
+
+      {d.amenities.length ? (
+        <div class="section">
+          <strong>Amenities</strong>
+          <div class="chips">
+            {d.amenities.map((a) => <span class="chip">{a}</span>)}
+          </div>
+        </div>
+      ) : null}
+
+      {d.parking.length ? (
+        <div class="section">
+          <strong>Parking</strong>
+          <ul>
+            {d.parking.map((p) => (
+              <li>
+                <strong>{p.name}</strong>
+                {p.free !== undefined ? (p.free ? " · Free" : " · Paid") : ""}
+                {p.walk_minutes ? ` · ${p.walk_minutes} min walk` : ""}
+                {p.price_note ? ` · ${p.price_note}` : ""}
+                {p.seasonal_note ? ` · ${p.seasonal_note}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {d.eateries.length ? (
+        <div class="section">
+          <strong>Nearby Food & Drink</strong>
+          <ul>
+            {d.eateries.map((e) => (
+              <li>
+                <strong>{e.name}</strong>
+                {e.seasonal ? " · Seasonal" : " · Year-round"}
+                {e.phone ? ` · ${e.phone}` : ""}
+                {e.url ? <> · <a href={e.url} rel="noopener">Website</a></> : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {d.notes && (
+        <div class="section">
+          <strong>Notes</strong>
+          <p>{d.notes}</p>
+        </div>
+      )}
+    </main>
+  </body>
+</html>
