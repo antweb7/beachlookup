@@ -1,0 +1,19 @@
+---
+const year = new Date().getFullYear();
+---
+<footer class="mt-10 border-t border-slate-200 bg-white">
+  <div class="mx-auto max-w-5xl px-4 py-6 text-sm text-slate-600">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        © {year} BeachLookup · Built for speed. 
+        <a href="/" class="text-blue-600 hover:underline">Home</a>
+      </div>
+      <div class="flex items-center gap-4">
+        <a href="/en/" class="hover:underline">English</a>
+        <a href="/es/" class="hover:underline">Español</a>
+        <!-- Add legal pages later -->
+        <!-- <a href="/privacy" class="hover:underline">Privacy</a> -->
+      </div>
+    </div>
+  </div>
+</footer>
